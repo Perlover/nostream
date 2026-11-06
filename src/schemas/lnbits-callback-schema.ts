@@ -7,8 +7,9 @@ export const lnbitsCallbackQuerySchema = z
   })
   .strict()
 
-export const lnbitsCallbackBodySchema = z
-  .object({
-    payment_hash: idSchema,
-  })
-  .strict()
+// LNbits posts its whole payment object (checking_id, amount, bolt11, status, ...).
+// Only payment_hash is used; the invoice state is fetched from LNbits itself, so the
+// other fields are stripped rather than rejected.
+export const lnbitsCallbackBodySchema = z.object({
+  payment_hash: idSchema,
+})

@@ -68,6 +68,32 @@ const makeValidQuery = (expiry = VALID_HMAC_EXPIRY) => {
   return { hmac: `${expiryString}:${signature}` }
 }
 
+// The payment object LNbits >= 1.0 posts to the webhook (lnbits.core.models.Payment)
+const makeLNbitsPayment = () => ({
+  checking_id: PAYMENT_HASH,
+  payment_hash: PAYMENT_HASH,
+  wallet_id: 'c'.repeat(32),
+  amount: 21000,
+  fee: 0,
+  bolt11: 'lnbc210n1test',
+  payment_request: 'lnbc210n1test',
+  fiat_provider: null,
+  status: 'success',
+  memo: 'test invoice',
+  expiry: '2030-01-02T00:00:00+00:00',
+  webhook: 'https://relay.example.com/callbacks/lnbits?hmac=1:abc',
+  webhook_status: null,
+  preimage: 'd'.repeat(64),
+  tag: null,
+  extension: null,
+  time: '2030-01-01T00:00:00+00:00',
+  created_at: '2030-01-01T00:00:00+00:00',
+  updated_at: '2030-01-01T00:00:05+00:00',
+  labels: [],
+  extra: {},
+  external_id: null,
+})
+
 const makeReq = (overrides: any = {}): any => ({
   headers: {},
   query: makeValidQuery(),
@@ -161,6 +187,55 @@ describe('LNbitsCallbackController', () => {
       expect(res.status).to.have.been.calledWith(400)
       expect(res.setHeader).to.have.been.calledWith('content-type', 'text/plain; charset=utf8')
       expect(res.send).to.have.been.calledWith('Malformed body')
+    })
+
+    it('returns 400 for a string body that is not JSON', async () => {
+      const { controller, paymentsService } = makeController()
+      const res = makeRes()
+
+      await controller.handleRequest(makeReq({ body: 'not json' }), res)
+
+      expect(res.status).to.have.been.calledWith(400)
+      expect(res.send).to.have.been.calledWith('Malformed body')
+      expect(paymentsService.getInvoiceFromPaymentsProcessor).to.not.have.been.called
+    })
+
+    it('returns 400 for a JSON string body without a valid payment_hash', async () => {
+      const { controller, paymentsService } = makeController()
+      const res = makeRes()
+
+      await controller.handleRequest(makeReq({ body: JSON.stringify({ payment_hash: 'abc' }) }), res)
+
+      expect(res.status).to.have.been.calledWith(400)
+      expect(res.send).to.have.been.calledWith('Malformed body')
+      expect(paymentsService.getInvoiceFromPaymentsProcessor).to.not.have.been.called
+    })
+  })
+
+  describe('LNbits payload formats', () => {
+    it('confirms an invoice when LNbits >= 1.0 posts the payment as a JSON string', async () => {
+      const { controller, paymentsService, invoiceRepository } = makeController()
+      const res = makeRes()
+
+      await controller.handleRequest(makeReq({ body: JSON.stringify(makeLNbitsPayment()) }), res)
+
+      expect(paymentsService.getInvoiceFromPaymentsProcessor).to.have.been.calledOnceWithExactly(PAYMENT_HASH)
+      expect(invoiceRepository.findById).to.have.been.calledOnceWithExactly(PAYMENT_HASH)
+      expect(paymentsService.confirmInvoice).to.have.been.calledOnce
+      expect(res.status).to.have.been.calledWith(200)
+      expect(res.send).to.have.been.calledWith('OK')
+    })
+
+    it('confirms an invoice when the whole payment object is posted', async () => {
+      const { controller, paymentsService } = makeController()
+      const res = makeRes()
+
+      await controller.handleRequest(makeReq({ body: makeLNbitsPayment() }), res)
+
+      expect(paymentsService.getInvoiceFromPaymentsProcessor).to.have.been.calledOnceWithExactly(PAYMENT_HASH)
+      expect(paymentsService.confirmInvoice).to.have.been.calledOnce
+      expect(res.status).to.have.been.calledWith(200)
+      expect(res.send).to.have.been.calledWith('OK')
     })
   })
 

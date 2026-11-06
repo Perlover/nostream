@@ -21,7 +21,9 @@ const requireProcessor = (name: string) =>
 
 router
   .post('/zebedee', requireProcessor('zebedee'), json(), withController(createZebedeeCallbackController))
-  .post('/lnbits', requireProcessor('lnbits'), json(), withController(createLNbitsCallbackController))
+  // strict: false — LNbits >= 1.0 posts a JSON string (the payment JSON-encoded twice),
+  // which the default strict parser rejects with 400 before the controller runs.
+  .post('/lnbits', requireProcessor('lnbits'), json({ strict: false }), withController(createLNbitsCallbackController))
   .post('/opennode', requireProcessor('opennode'), urlencoded({ extended: false }), json(), withController(createOpenNodeCallbackController))
   .post(
     '/nodeless',

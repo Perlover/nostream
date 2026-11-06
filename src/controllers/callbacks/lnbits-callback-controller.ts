@@ -13,6 +13,21 @@ import { validateSchema } from '../../utils/validation'
 
 const logger = createLogger('lnbits-callback-controller')
 
+// LNbits >= 1.0 sends the webhook with `json=payment.json()`, which JSON-encodes the
+// already serialized payment a second time: the body is a JSON string that holds the
+// payment object. Older LNbits sends the object itself. Accept both.
+const decodeLNbitsCallbackBody = (body: unknown): unknown => {
+  if (typeof body !== 'string') {
+    return body
+  }
+
+  try {
+    return JSON.parse(body)
+  } catch {
+    return undefined
+  }
+}
+
 export class LNbitsCallbackController implements IController {
   public constructor(
     private readonly paymentsService: IPaymentsService,
@@ -50,15 +65,15 @@ export class LNbitsCallbackController implements IController {
       return
     }
 
-    const bodyValidation = validateSchema(lnbitsCallbackBodySchema)(request.body)
+    const bodyValidation = validateSchema(lnbitsCallbackBodySchema)(decodeLNbitsCallbackBody(request.body))
     if (bodyValidation.error) {
       response.status(400).setHeader('content-type', 'text/plain; charset=utf8').send('Malformed body')
       return
     }
 
-    const body = request.body
-    const invoice = await this.paymentsService.getInvoiceFromPaymentsProcessor(body.payment_hash)
-    const storedInvoice = await this.invoiceRepository.findById(body.payment_hash)
+    const paymentHash: string = bodyValidation.value.payment_hash
+    const invoice = await this.paymentsService.getInvoiceFromPaymentsProcessor(paymentHash)
+    const storedInvoice = await this.invoiceRepository.findById(paymentHash)
 
     if (!storedInvoice) {
       response.status(404).setHeader('content-type', 'text/plain; charset=utf8').send('No such invoice')
